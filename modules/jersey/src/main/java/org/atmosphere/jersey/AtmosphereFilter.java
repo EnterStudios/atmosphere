@@ -65,7 +65,6 @@ import org.atmosphere.cpr.BroadcasterConfig;
 import org.atmosphere.cpr.BroadcasterFactory;
 import org.atmosphere.cpr.ClusterBroadcastFilter;
 import org.atmosphere.cpr.FrameworkConfig;
-import org.atmosphere.cpr.Trackable;
 import org.atmosphere.di.InjectorProvider;
 import org.atmosphere.websocket.WebSocket;
 import org.slf4j.Logger;
@@ -127,7 +126,7 @@ public class AtmosphereFilter implements ResourceFilterFactory {
     enum Action {
         SUSPEND, RESUME, BROADCAST, SUSPEND_RESUME,
         SCHEDULE_RESUME, RESUME_ON_BROADCAST, NONE, SCHEDULE, SUSPEND_RESPONSE,
-        SUSPEND_TRACKABLE, SUBSCRIBE, SUBSCRIBE_TRACKABLE, PUBLISH, ASYNCHRONOUS
+        SUBSCRIBE, SUBSCRIBE_TRACKABLE, PUBLISH, ASYNCHRONOUS
     }
 
     private
@@ -360,28 +359,13 @@ public class AtmosphereFilter implements ResourceFilterFactory {
                         bc = (Broadcaster) servletReq.getAttribute(INJECTED_BROADCASTER);
                     }
 
-                    boolean supportTrackable = servletReq.getAttribute(ApplicationConfig.SUPPORT_TRACKABLE) != null;
-                    // Register our TrackableResource
-                    boolean isTracked = response.getEntity() != null ? TrackableResource.class.isAssignableFrom(response.getEntity().getClass()) : supportTrackable;
-
-                    TrackableResource<? extends Trackable> trackableResource = null;
-                    if (isTracked) {
-                        trackableResource = preTrack(request, response);
-                    }
-
                     suspend(resumeOnBroadcast, outputJunk,
                             translateTimeUnit(s.period().value(), s.period().timeUnit()), request, response, bc, r, s.scope(), s.writeEntity());
-
-                    // Associate the tracked resource.
-                    if (isTracked && trackableResource != null) {
-                        postTrack(trackableResource, r);
-                    }
 
                     break;
                 case SUBSCRIBE_TRACKABLE:
                 case SUBSCRIBE:
                 case SUSPEND:
-                case SUSPEND_TRACKABLE:
                 case SUSPEND_RESUME:
                     outputJunk = outputJunk(outputComments);
                     resumeOnBroadcast = resumeOnBroadcast((action == Action.SUSPEND_RESUME));
@@ -411,24 +395,8 @@ public class AtmosphereFilter implements ResourceFilterFactory {
                         broadcaster = BroadcasterFactory.getDefault().lookup(c, topic, true);
                     }
 
-                    // Tracking is enabled by default
-                    supportTrackable = servletReq.getAttribute(ApplicationConfig.SUPPORT_TRACKABLE) != null;
-                    // Register our TrackableResource
-                    isTracked = response.getEntity() != null ? TrackableResource.class.isAssignableFrom(response.getEntity().getClass()) : supportTrackable;
-
-                    if (isTracked) {
-                        trackableResource = preTrack(request, response);
-                    } else {
-                        trackableResource = null;
-                    }
-
                     suspend(resumeOnBroadcast, outputJunk, timeout, request, response,
                             broadcaster, r, scope, writeEntity);
-
-                    // Associate the tracked resource.
-                    if (isTracked && trackableResource != null) {
-                        postTrack(trackableResource, r);
-                    }
                     break;
                 case RESUME:
                     if (response.getEntity() != null) {
@@ -532,35 +500,6 @@ public class AtmosphereFilter implements ResourceFilterFactory {
                 }
             }
             return value;
-        }
-
-        TrackableResource preTrack(ContainerRequest request, ContainerResponse response) {
-            TrackableResource<? extends Trackable> trackableResource = TrackableResource.class.cast(response.getEntity());
-
-            if (trackableResource == null) {
-                trackableResource = new TrackableResource<AtmosphereResource>(AtmosphereResource.class, servletReq.getHeader(X_ATMOSPHERE_TRACKING_ID), "");
-            } else {
-                response.setEntity(trackableResource.entity());
-            }
-
-            String trackableUUID = request.getHeaderValue(X_ATMOSPHERE_TRACKING_ID);
-            if (trackableUUID == null && trackableResource.trackingID() != null) {
-                trackableUUID = trackableResource.trackingID();
-            } else if (trackableUUID == null) {
-                trackableUUID = UUID.randomUUID().toString();
-            }
-            trackableResource.setTrackingID(trackableUUID);
-
-            TrackableSession.getDefault().track(trackableResource);
-
-            response.getHttpHeaders().putSingle(X_ATMOSPHERE_TRACKING_ID, trackableResource.trackingID());
-            servletReq.setAttribute(X_ATMOSPHERE_TRACKING_ID, trackableResource.trackingID());
-            return trackableResource;
-        }
-
-        void postTrack(TrackableResource trackableResource, AtmosphereResource r) {
-            boolean isAresource = AtmosphereResource.class.isAssignableFrom(trackableResource.type()) ? true : false;
-            trackableResource.setResource(isAresource ? r : r.getBroadcaster());
         }
 
         Response.ResponseBuilder configureHeaders(Response.ResponseBuilder b) throws IOException {
@@ -957,15 +896,10 @@ public class AtmosphereFilter implements ResourceFilterFactory {
             Suspend.SCOPE scope = am.getAnnotation(Suspend.class).scope();
             boolean outputComments = am.getAnnotation(Suspend.class).outputComments();
 
-            boolean trackable = false;
-            if (TrackableResource.class.isAssignableFrom(am.getMethod().getReturnType())) {
-                trackable = true;
-            }
-
             if (am.getAnnotation(Suspend.class).resumeOnBroadcast()) {
-                f = new Filter(trackable ? Action.SUSPEND_TRACKABLE : Action.SUSPEND_RESUME, suspendTimeout, 0, scope, outputComments);
+                f = new Filter(Action.SUSPEND_RESUME, suspendTimeout, 0, scope, outputComments);
             } else {
-                f = new Filter(trackable ? Action.SUSPEND_TRACKABLE : Action.SUSPEND, suspendTimeout, 0, scope, outputComments);
+                f = new Filter(Action.SUSPEND, suspendTimeout, 0, scope, outputComments);
             }
             f.setListeners(am.getAnnotation(Suspend.class).listeners());
 
@@ -973,12 +907,7 @@ public class AtmosphereFilter implements ResourceFilterFactory {
         }
 
         if (am.isAnnotationPresent(Subscribe.class)) {
-            boolean trackable = false;
-            if (TrackableResource.class.isAssignableFrom(am.getMethod().getReturnType())) {
-                trackable = true;
-            }
-
-            f = new Filter(trackable ? Action.SUBSCRIBE_TRACKABLE : Action.SUBSCRIBE, 30000, -1, Suspend.SCOPE.APPLICATION,
+            f = new Filter(Action.SUBSCRIBE, 30000, -1, Suspend.SCOPE.APPLICATION,
                     false, null, am.getAnnotation(Subscribe.class).value(), am.getAnnotation(Subscribe.class).writeEntity());
             f.setListeners(am.getAnnotation(Subscribe.class).listeners());
 

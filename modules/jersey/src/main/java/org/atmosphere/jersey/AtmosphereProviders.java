@@ -40,7 +40,6 @@ import com.sun.jersey.spi.StringReader;
 import com.sun.jersey.spi.StringReaderProvider;
 import org.atmosphere.cpr.ApplicationConfig;
 import org.atmosphere.cpr.AtmosphereResource;
-import org.atmosphere.cpr.AtmosphereResourceImpl;
 import org.atmosphere.cpr.Broadcaster;
 import org.atmosphere.cpr.BroadcasterFactory;
 import org.atmosphere.cpr.FrameworkConfig;
@@ -53,10 +52,6 @@ import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Context;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
-
-import static org.atmosphere.cpr.HeaderConfig.X_ATMOSPHERE_TRACKING_ID;
-import static org.atmosphere.cpr.HeaderConfig.X_ATMOSPHERE_TRANSPORT;
-import static org.atmosphere.cpr.FrameworkConfig.ATMOSPHERE_RESOURCE;
 
 /**
  * Placeholder for injection of Atmosphere object based on
@@ -109,53 +104,6 @@ public class AtmosphereProviders {
                 logger.trace("Injected Broadcaster {}", broadcaster);
                 req.setAttribute(AtmosphereFilter.INJECTED_BROADCASTER, broadcaster);
                 return broadcaster;
-            }
-        }
-    }
-
-    public static class TrackableResourceProvider implements StringReaderProvider {
-
-        @Context
-        HttpServletRequest req;
-
-        @Override
-        public StringReader getStringReader(Class type, Type genericType, Annotation[] annotations) {
-
-            if (TrackableResource.class.isAssignableFrom(type)) {
-                return new TrackableResourceStringReader();
-            }
-
-            return null;
-        }
-
-        @StringReader.ValidateDefaultValue(false)
-        public class TrackableResourceStringReader implements StringReader {
-            @Override
-            public Object fromString(String topic) {
-                TrackableResource<AtmosphereResourceImpl> trackableResource = null;
-                try {
-                    String trackingId = req.getHeader(X_ATMOSPHERE_TRACKING_ID);
-                    if (trackingId == null) {
-                        trackingId = (String) req.getAttribute(X_ATMOSPHERE_TRACKING_ID);
-                    }
-
-                    if (trackingId != null) {
-                        trackableResource = (TrackableResource<AtmosphereResourceImpl>) TrackableSession.getDefault().lookup(trackingId);
-
-                        if (req.getAttribute(ApplicationConfig.SUPPORT_TRACKABLE) != null) {
-                            AtmosphereResource<?, ?> r = (AtmosphereResource<?, ?>) req.getAttribute(ATMOSPHERE_RESOURCE);
-                            if (trackableResource == null) {
-                                trackableResource = new TrackableResource<AtmosphereResourceImpl>(AtmosphereResourceImpl.class, trackingId, "");
-                                trackableResource.setResource(r);
-                            }
-                            logger.trace("Tracking resource of AtmosphereResource {} with {}", r.hashCode(), trackingId);
-                        }
-                        req.setAttribute(AtmosphereFilter.INJECTED_TRACKABLE, trackableResource);
-                    }
-                } catch (Throwable ex) {
-                    throw new WebApplicationException(ex);
-                }
-                return trackableResource;
             }
         }
     }
