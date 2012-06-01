@@ -279,7 +279,6 @@ public class AtmosphereServlet extends AbstractAsyncServlet implements CometProc
     public class AtmosphereConfig {
 
         private boolean supportSession = true;
-        private BroadcasterFactory broadcasterFactory;
         private String dispatcherName = DEFAULT_NAMED_DISPATCHER;
         private Map<String, Object> properties = new HashMap<String, Object>();
 
@@ -332,7 +331,7 @@ public class AtmosphereServlet extends AbstractAsyncServlet implements CometProc
          * @return an instance of a {@link DefaultBroadcasterFactory}
          */
         public BroadcasterFactory getBroadcasterFactory() {
-            return broadcasterFactory;
+            return BroadcasterFactory.getDefault();
         }
 
         public boolean isSupportSession() {
@@ -609,12 +608,6 @@ public class AtmosphereServlet extends AbstractAsyncServlet implements CometProc
             broadcasterFactory = new DefaultBroadcasterFactory(bc, broadcasterLifeCyclePolicy, config);
         }
 
-        // http://java.net/jira/browse/ATMOSPHERE-157
-        if (sc != null) {
-            sc.setAttribute(BroadcasterFactory.class.getName(), broadcasterFactory);
-        }
-
-        config.broadcasterFactory = broadcasterFactory;
         BroadcasterFactory.setBroadcasterFactory(broadcasterFactory, config);
         InjectorProvider.getInjector().inject(broadcasterFactory);
 
@@ -783,6 +776,7 @@ public class AtmosphereServlet extends AbstractAsyncServlet implements CometProc
         logger.info("Using BroadcasterFactory class: {}", DefaultBroadcasterFactory.class.getName());
 
         broadcasterFactory = new DefaultBroadcasterFactory(bc, broadcasterLifeCyclePolicy, config);
+        BroadcasterFactory.setBroadcasterFactory(broadcasterFactory, config);
         Broadcaster b = BroadcasterFactory.getDefault().get(bc, mapping);
 
         addAtmosphereHandler(mapping, rsp, b);
@@ -1187,11 +1181,12 @@ public class AtmosphereServlet extends AbstractAsyncServlet implements CometProc
      */
     public Action doCometSupport(HttpServletRequest req, HttpServletResponse res)
             throws IOException, ServletException {
-        req.setAttribute(BROADCASTER_FACTORY, broadcasterFactory);
+        req.setAttribute(BROADCASTER_FACTORY, BroadcasterFactory.getDefault());
         req.setAttribute(PROPERTY_USE_STREAM, useStreamForFlushingComments);
         req.setAttribute(BROADCASTER_CLASS, broadcasterClassName);
         req.setAttribute(SUPPORT_TRACKABLE, config.getInitParameter(SUPPORT_TRACKABLE));
         req.setAttribute(SUPPORT_LOCATION_HEADER, config.getInitParameter(SUPPORT_LOCATION_HEADER));
+
 
         AtmosphereRequest r  = null;
         Action a = null;

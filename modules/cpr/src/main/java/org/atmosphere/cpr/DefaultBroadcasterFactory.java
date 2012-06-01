@@ -82,8 +82,6 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
         if (factory == null) {
             this.factory = this;
         }
-        logger.debug("********************************************* ");
-
         configure(broadcasterLifeCyclePolicy);
     }
 
@@ -168,8 +166,11 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
      * {@inheritDoc}
      */
     public boolean add(Broadcaster b, Object id) {
-        logger.debug(hashCode() + " Adding Broadcaster {} factory size now {} ", id, store.size());
-        return (store.put(id, b) == null);
+        boolean added = store.put(id, b) == null;
+        if (added) {
+            logger.debug("Adding Broadcaster {} factory size now {} ", id, store.size());
+        }
+        return added;
     }
 
     /**
@@ -178,7 +179,7 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
     public boolean remove(Broadcaster b, Object id) {
         boolean removed = store.remove(id, b);
         if (removed) {
-            logger.debug(hashCode()  + " Removing Broadcaster {} factory size now {} ", id, store.size());
+            logger.debug("Removing Broadcaster {} factory size now {} ", id, store.size());
         }
         return removed;
     }
