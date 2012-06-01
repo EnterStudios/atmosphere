@@ -40,15 +40,18 @@ package org.atmosphere.cpr;
 
 
 import org.atmosphere.di.InjectorProvider;
-import org.atmosphere.util.SimpleBroadcaster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static org.atmosphere.cpr.BroadcasterLifeCyclePolicy.ATMOSPHERE_RESOURCE_POLICY.EMPTY;
 import static org.atmosphere.cpr.BroadcasterLifeCyclePolicy.ATMOSPHERE_RESOURCE_POLICY.EMPTY_DESTROY;
@@ -76,6 +79,9 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
     private BroadcasterLifeCyclePolicy policy =
             new BroadcasterLifeCyclePolicy.Builder().policy(NEVER).build();
 
+    private final ScheduledExecutorService closedDetector;
+
+
     protected DefaultBroadcasterFactory(Class<? extends Broadcaster> clazz, String broadcasterLifeCyclePolicy, AtmosphereServlet.AtmosphereConfig c) {
         this.clazz = clazz;
         config = c;
@@ -83,6 +89,19 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
             this.factory = this;
         }
         configure(broadcasterLifeCyclePolicy);
+
+        closedDetector = Executors.newScheduledThreadPool(1);
+        closedDetector.scheduleAtFixedRate(new Runnable() {
+            public void run() {
+                for(Map.Entry<Object,Broadcaster> m: store.entrySet()) {
+                    if (m.getValue().getAtmosphereResources().size() == 0 && policy.getLifeCyclePolicy().equals(EMPTY_DESTROY)) {
+                        m.getValue().destroy();
+                        store.remove(m.getKey());
+                        logger.debug("Cleaning id {} size now {}", m.getValue().getID(), store.size());
+                    }
+                }
+            }
+        }, 0, 60, TimeUnit.SECONDS);
     }
 
     private void configure(String broadcasterLifeCyclePolicy) {
@@ -168,7 +187,7 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
     public boolean add(Broadcaster b, Object id) {
         boolean added = store.put(id, b) == null;
         if (added) {
-            logger.debug("Adding Broadcaster {} factory size now {} ", id, store.size());
+            logger.trace("Adding Broadcaster {} factory size now {} ", id, store.size());
         }
         return added;
     }
@@ -179,7 +198,7 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
     public boolean remove(Broadcaster b, Object id) {
         boolean removed = store.remove(id, b);
         if (removed) {
-            logger.debug("Removing Broadcaster {} factory size now {} ", id, store.size());
+            logger.trace("Removing Broadcaster {} factory size now {} ", id, store.size());
         }
         return removed;
     }
@@ -268,6 +287,7 @@ public class DefaultBroadcasterFactory extends BroadcasterFactory {
      * {@inheritDoc}
      */
     public synchronized void destroy() {
+        closedDetector.shutdownNow();
         Enumeration<Broadcaster> e = store.elements();
         Broadcaster b;
         // We just need one when shared.
